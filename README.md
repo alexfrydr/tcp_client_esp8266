@@ -4,6 +4,7 @@
 D1 - TX
 GND - GND
 VCC - 3v3
+
 Ссылка на менеджер плат: http://arduino.esp8266.com/stable/package_esp8266com_index.json
 Версия 2.5.0
 
