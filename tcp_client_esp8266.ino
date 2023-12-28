@@ -10,8 +10,8 @@ const char* password = "password";
 const char* serverAddress = "XXX.XXX.XXX.XXX"; // IP адрес сервера
 const int serverPort = 7776; // Порт сервера
 
-#define RDM6300_RX_PIN 5 
-#define READ_LED_PIN 4
+#define RDM6300_RX_PIN 5 //Пин для подключения модуля RDM
+#define READ_LED_PIN 4 //Пин для подключения светодиода
 // Объект для работы с RDM6300
 Rdm6300 rdm6300;
 
