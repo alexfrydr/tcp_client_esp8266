@@ -44,7 +44,7 @@ void loop() {
     uint32_t cardSerial = rdm6300.get_tag_id();
     
     // Конструкция строки JSON
-    String jsonString = "{\"card_serial\":\"" + String(cardSerial, HEX) + "\"}\r\n";
+    String jsonString = String(cardSerial, HEX) + "\r\n";
     Serial.println("Connecting to server...");
     
     // Отправка данных на сервер
