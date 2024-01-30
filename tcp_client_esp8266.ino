@@ -1,57 +1,136 @@
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
+#include <ESP8266WebServer.h>
 #include <rdm6300.h>
-// Настройки для подключения к Wi-Fi
-const char* ssid = "Ssid";
-const char* password = "pass";
-// Настройки для TCP сервера
-const char* serverAddress = "tcp-server"; // IP адрес сервера
-const int serverPort = 7776; // Порт сервера
-#define RDM6300_RX_PIN 5 // Порт RDM6300
-#define READ_LED_PIN 4 // Пин подключения диода
-// Объект для работы с RDM6300
+#include <Ticker.h>
+
+const char* ssid = "SSid";
+const char* password = "password";
+const char* serverAddress = "tcp_server";
+const int serverPort = 7776;
+#define RDM6300_RX_PIN 5
+#define READ_LED_PIN 4
+#define MAX_JSON_STRING_LENGTH 20
+
 Rdm6300 rdm6300;
-// Объект для работы с TCP клиентом
 WiFiClient client;
+ESP8266WebServer server(80);
+
+// Variables to store the last three serial messages
+String serialMessages[3];
+int serialIndex = 0;
+
+// Function to connect to Wi-Fi
+void connectToWiFi() {
+  Serial.println("Connecting to Wi-Fi...");
+  WiFi.begin(ssid, password);
+
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+    delay(500);
+    Serial.print(".");
+    attempts++;
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nConnected to Wi-Fi");
+    Serial.print("IP Address: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("\nWi-Fi connection failed. Check your credentials or restart the device.");
+  }
+}
+
+// Handler for the root URL
+void handleRoot() {
+  // Build the HTML response
+  String html = "<html><body>";
+  html += "<h1>TCP client</h1>";
+  html += "<p>Wi-Fi Status: " + String(WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected") + "</p>";
+  html += "<p>IP Address: " + WiFi.localIP().toString() + "</p>";
+  html += "<p><a href='/restart'>Reboot</a></p>";
+
+  // Display the last three serial messages
+  html += "<p>Last three serial messages:</p>";
+  for (int i = 0; i < 3; i++) {
+    html += "<p>" + serialMessages[(serialIndex + i) % 3] + "</p>";
+  }
+
+  html += "</body></html>";
+
+  // Send the HTML response
+  server.send(200, "text/html", html);
+}
+
+Ticker timer;
+
+void restartESP() {
+  Serial.println("Restarting...");
+  ESP.restart();
+}
+
+// Handler for device restart
+void handleRestart() {
+  // Send the "Restarting..." response
+  server.send(200, "text/plain", "Restarting...");
+
+  // Set up a timer to restart the ESP in a moment
+  timer.attach(1, restartESP);
+}
+
 void setup() {
   Serial.begin(115200);
-  // Подключение к Wi-Fi
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    Serial.println("Connecting to WiFi...");
-  }
-  Serial.println("Connected to WiFi");
-  Serial.print("IP Address: ");
-  Serial.println(WiFi.localIP());
+
+  connectToWiFi();
+
   pinMode(READ_LED_PIN, OUTPUT);
   digitalWrite(READ_LED_PIN, LOW);
-  // Настройка RDM6300
+
   rdm6300.begin(RDM6300_RX_PIN);
+
+  // Set up web server routes
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/restart", HTTP_GET, handleRestart);
+
+  // Start the server
+  server.begin();
 }
+
 void loop() {
-  // Чтение данных с RDM6300
+  server.handleClient();
+
   if (rdm6300.get_new_tag_id()) {
     uint32_t cardSerial = rdm6300.get_tag_id();
-    // Конструкция строки JSON
-    String jsonString = String(cardSerial, HEX) + "\r\n";
-    Serial.println("Connecting to server...");
-    // Отправка данных на сервер
+    char jsonString[MAX_JSON_STRING_LENGTH];
+    snprintf(jsonString, MAX_JSON_STRING_LENGTH, "%X\r\n", cardSerial);
+    Serial.println("Connecting to the server...");
+
+    // Save the serial message to the array
+    serialMessages[serialIndex] = jsonString;
+    serialIndex = (serialIndex + 1) % 3;
+
     if (client.connect(serverAddress, serverPort)) {
-      Serial.println("Connected to server");
-      // Отправка данных на сервер
+      Serial.println("Connected to the server");
       client.println(jsonString);
-      Serial.println("Data sent to server");
-      // Моргнуть диодом после отправки
+      Serial.println("Data sent to the server");
+
       digitalWrite(READ_LED_PIN, HIGH);
-      delay(500); 
+      delay(500);
       digitalWrite(READ_LED_PIN, LOW);
-      // Отключиться от сервера
+
       client.stop();
-      Serial.println("Connection to server closed");
+      Serial.println("Connection to the server closed");
     } else {
-      Serial.println("Connection to server failed");
+      Serial.println("Connection to the server failed");
     }
   }
-  delay(100); // Задержка повтора цикла
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Wi-Fi connection lost. Reconnecting...");
+    connectToWiFi();
+  }
+
+  // Other loop logic can be added here
+
+  delay(100);
 }
