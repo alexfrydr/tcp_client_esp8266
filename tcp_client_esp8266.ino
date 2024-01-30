@@ -1,6 +1,9 @@
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
+#include <ESP8266mDNS.h>
+#include <WiFiUdp.h>
+#include <ArduinoOTA.h>
 #include <rdm6300.h>
 #include <Ticker.h>
 
@@ -25,6 +28,9 @@ String errorMessages;
 
 // Timer to clear error messages after 10 seconds
 Ticker errorClearTimer;
+
+// Timer to clear Rfid card messages after 20 seconds
+Ticker rfidCardClearTimer;
 
 // Function to connect to Wi-Fi
 void connectToWiFi() {
@@ -55,10 +61,11 @@ void handleRoot() {
   html += "<h1>Printer TCP client</h1>";
   html += "<p>Wi-Fi Status: " + String(WiFi.status() == WL_CONNECTED ? "Connected" : "Disconnected") + "</p>";
   html += "<p>IP Address: " + WiFi.localIP().toString() + "</p>";
-  html += "<p><a href='/restart'>Reboot</a></p>";
+  html += "<p>Print Server: " + String(serverAddress) + "</p>";
+  html += "<p>Port: " + String(serverPort) + "</p>";
 
   // Display the last three serial messages
-  html += "<p>Rfid card messages:</p>";
+  html += "<p><b>Rfid card messages:</b></p>";
   for (int i = 0; i < 1; i++) {
     html += "<p>" + serialMessages[(serialIndex + i) % 1] + "</p>";
   }
@@ -66,6 +73,10 @@ void handleRoot() {
   // Add a separate field for errors
   html += "<h2>Error Log:</h2>";
   html += "<p>" + errorMessages + "</p>";
+
+  // Add a link to reboot at the bottom
+  html += "<p><a href='/restart'>Reboot</a></p>";
+
   html += "</body></html>";
 
   // Send the HTML response
@@ -99,8 +110,39 @@ void clearErrorMessages() {
   Serial.println("Error messages cleared");
 }
 
+void clearRfidCardMessages() {
+  // Clear Rfid card messages
+  serialMessages[0] = "";
+  Serial.println("Rfid card messages cleared");
+}
+
+void setupOTA() {
+  // Initialize ArduinoOTA
+  ArduinoOTA.onStart([]() {
+    Serial.println("OTA Update Start");
+  });
+  ArduinoOTA.onEnd([]() {
+    Serial.println("\nOTA Update End");
+  });
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    Serial.printf("OTA Progress: %u%%\r", (progress / (total / 100)));
+  });
+  ArduinoOTA.onError([](ota_error_t error) {
+    Serial.printf("OTA Error[%u]: ", error);
+    if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+    else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+    else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+    else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+    else if (error == OTA_END_ERROR) Serial.println("End Failed");
+  });
+  ArduinoOTA.begin();
+}
+
 void setup() {
   Serial.begin(115200);
+
+  // Setup OTA
+  setupOTA();
 
   connectToWiFi();
 
@@ -116,6 +158,9 @@ void setup() {
   // Set up a timer to clear error messages after 10 seconds
   errorClearTimer.attach(10, clearErrorMessages);
 
+  // Set up a timer to clear Rfid card messages after 20 seconds
+  rfidCardClearTimer.attach(20, clearRfidCardMessages);
+
   // Start the server
   server.begin();
 }
@@ -123,6 +168,7 @@ void setup() {
 void loop() {
   server.handleClient();
   feedWatchdog();
+  ArduinoOTA.handle();  // Handle OTA
   handleRFIDCard();
   handleWiFiReconnection();
   // ... other logic
